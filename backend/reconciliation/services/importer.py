@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
@@ -26,6 +27,10 @@ logger = logging.getLogger(__name__)
 REQUIRED_COLUMNS = ("date", "description", "amount", "type", "reference")
 MAX_DESCRIPTION_LENGTH = 2000
 MAX_REFERENCE_LENGTH = 128
+
+# Control characters a bank export should never contain. A NUL in particular is
+# accepted by SQLite but rejected by PostgreSQL, so it is removed on the way in.
+CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 class FileRejected(Exception):
@@ -81,12 +86,12 @@ def decode(raw: bytes) -> str:
 
 
 def _clean(value) -> str:
-    """Trim surrounding whitespace; missing cells read as empty."""
+    """Trim surrounding whitespace and control characters; missing cells read as empty."""
     if value is None:
         return ""
     if isinstance(value, list):  # extra, unnamed columns
         value = value[0] if value else ""
-    return str(value).strip()
+    return CONTROL_CHARACTERS.sub("", str(value)).strip()
 
 
 def _build_reader(text: str) -> csv.DictReader:
@@ -100,6 +105,20 @@ def _build_reader(text: str) -> csv.DictReader:
         raise FileRejected(
             "The file is missing required column(s): " + ", ".join(missing),
             missing_columns=missing,
+        )
+
+    # A header that names a required column twice is ambiguous: the reader would
+    # silently keep whichever came last. Reject the file instead of guessing.
+    repeated = sorted(
+        {
+            column
+            for column in REQUIRED_COLUMNS
+            if reader.fieldnames.count(column) > 1
+        }
+    )
+    if repeated:
+        raise FileRejected(
+            "The file names the same column more than once: " + ", ".join(repeated)
         )
     return reader
 

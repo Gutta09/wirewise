@@ -62,6 +62,18 @@ class MissingColumnTests(ImportApiTestCase):
         )
         self.assertEqual(BankTransaction.objects.count(), 0)
 
+    def test_a_repeated_required_column_rejects_the_file(self):
+        """Two 'date' columns are ambiguous: the reader would silently keep the last."""
+        response = self.upload(
+            csv_bytes(
+                "2026-04-03,WIRE ONE,100.00,credit,FT1,2026-01-01",
+                header="date,description,amount,type,reference,date\n",
+            )
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("more than once", response.json()["detail"])
+        self.assertEqual(BankTransaction.objects.count(), 0)
+
     def test_empty_file_is_rejected(self):
         response = self.upload(b"")
         self.assertEqual(response.status_code, 400)
@@ -150,6 +162,44 @@ class RowValidationTests(ImportApiTestCase):
         response = self.upload(payload)
         # The bad row is the fourth physical line of the file.
         self.assertEqual([error["line"] for error in response.json()["errors"]], [4])
+
+    def test_an_amount_too_large_for_the_column_is_a_row_error(self):
+        """The row is skipped, and every other row stays readable afterwards."""
+        response = self.upload(
+            csv_bytes(
+                "2026-04-03,ABSURD WIRE,99999999999999999999.00,credit,FT1",
+                "2026-04-03,NORMAL WIRE,100.00,credit,FT2",
+            )
+        )
+        body = response.json()
+        self.assertEqual(body["imported"], 1)
+        self.assertEqual(body["errors"][0]["line"], 2)
+        self.assertIn("larger than the maximum", body["errors"][0]["message"])
+
+        # Reading the list back must not blow up on a stored over-precision value.
+        listing = self.client.get(reverse("transaction-list"), headers=NORTHWIND_HEADERS)
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual([row["amount"] for row in listing.json()], ["100.00"])
+
+    def test_control_characters_are_stripped_from_fields(self):
+        self.upload(csv_bytes("2026-04-03,WIRE\x00ONE,100.00,credit,FT\x011"))
+        record = BankTransaction.objects.get()
+        self.assertEqual(record.description, "WIREONE")
+        self.assertEqual(record.bank_reference, "FT1")
+
+    def test_a_statement_of_a_few_thousand_rows_imports(self):
+        rows = [
+            f"2026-04-03,WIRE {index} REF CC-1003,100.00,credit,FT{index:05d}"
+            for index in range(2000)
+        ]
+        body = self.upload(csv_bytes(*rows)).json()
+        self.assertEqual(body["imported"], 2000)
+        self.assertEqual(BankTransaction.objects.count(), 2000)
+        # Matches are written by the same bulk path, so they must exist too.
+        self.assertEqual(
+            BankTransaction.objects.filter(status=BankTransaction.Status.SUGGESTED).count(),
+            2000,
+        )
 
     def test_debits_are_stored_as_ignored_and_never_matched(self):
         self.upload(csv_bytes("2026-04-03,OUTGOING FEE,-250.00,debit,FT1"))

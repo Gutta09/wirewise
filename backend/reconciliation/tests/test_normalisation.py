@@ -55,6 +55,17 @@ class ParseAmountTests(SimpleTestCase):
         self.assertEqual(parse_amount("(500.00)"), Decimal("-500.00"))
         self.assertEqual(parse_amount("+90"), Decimal("90.00"))
 
+    def test_rejects_amounts_too_large_for_the_column(self):
+        """SQLite would store these and then fail on every read, so they stop here."""
+        from decimal import Decimal
+
+        from reconciliation.domain.money import MAX_AMOUNT
+
+        self.assertEqual(parse_amount("9999999999999999.99"), MAX_AMOUNT)
+        for raw in ["99999999999999999999.00", "1e30", "1E+400", "-" + "9" * 40]:
+            with self.subTest(raw=raw), self.assertRaises(AmountError):
+                parse_amount(raw)
+
     def test_rejects_zero_blank_and_non_numbers(self):
         for raw in ["0", "0.00", "", "   ", "abc", "12.5.6", "NaN", "-"]:
             with self.subTest(raw=raw), self.assertRaises(AmountError):

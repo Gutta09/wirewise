@@ -3,6 +3,10 @@
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 CENTS = Decimal("0.01")
+# Largest amount the database column holds (max_digits=18, decimal_places=2).
+# Anything bigger has to be rejected at the door: SQLite would store it happily
+# and then fail on every read.
+MAX_AMOUNT = Decimal("9999999999999999.99")
 
 
 class AmountError(ValueError):
@@ -38,6 +42,10 @@ def parse_amount(raw: str) -> Decimal:
 
     if negative:
         value = -value
+    if abs(value) > MAX_AMOUNT:
+        raise AmountError(
+            f"amount {raw.strip()!r} is larger than the maximum of {MAX_AMOUNT:,}"
+        )
     value = value.quantize(CENTS, rounding=ROUND_HALF_UP)
     if value == 0:
         raise AmountError("amount must not be zero")
