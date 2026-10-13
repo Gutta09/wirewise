@@ -108,11 +108,14 @@ def reject_match(match: Match) -> Match:
 def ignore_transaction(transaction: BankTransaction) -> BankTransaction:
     """Ignore a suggested or needs_review credit and reject its matches."""
     ignorable = {BankTransaction.Status.SUGGESTED, BankTransaction.Status.NEEDS_REVIEW}
-    if transaction.status not in ignorable or not transaction.is_credit:
+    if not transaction.is_credit:
         raise ActionConflict(
-            f"A {transaction.get_status_display().lower()} {transaction.type} "
-            "cannot be ignored."
+            "A debit cannot be ignored: it never goes through matching."
         )
+    if transaction.status == BankTransaction.Status.RECONCILED:
+        raise ActionConflict("A reconciled credit cannot be ignored.")
+    if transaction.status not in ignorable:
+        raise ActionConflict("This credit is already ignored.")
 
     updated = BankTransaction.objects.filter(
         pk=transaction.pk, status__in=list(ignorable)

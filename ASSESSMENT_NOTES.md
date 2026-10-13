@@ -48,7 +48,7 @@ If the API is not on `http://localhost:8000`, create `frontend/.env.local` with
 cd backend && python manage.py test
 ```
 
-78 tests, about 0.2s. They cover the eight required cases and the rest of the rules; no
+83 tests, about 0.3s. They cover the eight required cases and the rest of the rules; no
 test touches the network, and the Airtable client is faked.
 
 ### Sample files
@@ -159,7 +159,7 @@ backend/reconciliation/
 ├── integrations/airtable.py   optional bonus, easy to fake
 ├── api/               thin views, serializers, tenant resolution, error mapping
 ├── management/commands/seed_demo.py
-└── tests/             78 tests
+└── tests/             83 tests
 ```
 
 Views resolve the tenant, call one service function and serialize the result. Everything
@@ -234,6 +234,15 @@ collapse punctuation to single spaces, drop one trailing `LLC`/`LP`/`LTD`/`INC`,
     rows are well inside this.
 12. **`seed_demo` never lowers a funded amount.** Re-running it after an approval leaves
     the funding alone; `--reset` rebuilds the demo organizations from scratch.
+13. **An amount too large for the column is a row error**, not an import failure. The
+    limit is `9,999,999,999,999,999.99`, the largest value `max_digits=18,
+    decimal_places=2` holds. This matters: SQLite does not enforce precision, so an
+    oversized value would be stored happily and then raise `decimal.InvalidOperation`
+    on every later read of that organization's transactions.
+14. **A header that names a required column twice rejects the file.** The reader would
+    otherwise silently keep whichever column came last, which is a coin toss.
+15. **C0 control characters are stripped from every field.** A NUL byte is accepted by
+    SQLite but rejected outright by PostgreSQL, and no bank export needs one.
 
 ---
 

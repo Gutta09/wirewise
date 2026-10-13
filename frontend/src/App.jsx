@@ -87,6 +87,9 @@ export default function App() {
     }
   }
 
+  // Only a slug confirmed against the loaded list counts as a usable organization:
+  // a slug remembered from localStorage must not put the upload form on screen
+  // before we know the organization still exists.
   const current = organizations.find((item) => item.slug === organization)
 
   return (
@@ -119,10 +122,10 @@ export default function App() {
           </p>
         ) : null}
 
-        {organization ? (
+        {current ? (
           <>
             <ImportPanel
-              organizationName={current?.name ?? organization}
+              organizationName={current.name}
               onImport={async (file) => {
                 const summary = await api.importStatement(organization, file)
                 await loadData(organization)

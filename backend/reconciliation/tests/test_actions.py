@@ -228,9 +228,13 @@ class IgnoreTests(ActionTestCase):
     def test_ignoring_a_debit_is_a_409(self):
         self.import_rows("2026-04-03,OUTGOING FEE,-250.00,debit,FT1")
         record = BankTransaction.objects.get()
-        self.assertEqual(self.ignore(record.pk).status_code, 409)
+        response = self.ignore(record.pk)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"], "A debit cannot be ignored: it never goes through matching.")
 
     def test_ignoring_twice_is_a_409(self):
         record = make_transaction(self.organization, status=BankTransaction.Status.NEEDS_REVIEW)
         self.assertEqual(self.ignore(record.pk).status_code, 200)
-        self.assertEqual(self.ignore(record.pk).status_code, 409)
+        response = self.ignore(record.pk)
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"], "This credit is already ignored.")
