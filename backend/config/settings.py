@@ -25,18 +25,26 @@ def load_dotenv(path: Path) -> None:
 load_dotenv(BASE_DIR / ".env")
 
 
-def env_bool(name: str, default: bool = False) -> bool:
+def env(name: str, default: str = "") -> str:
+    """Read an environment variable, treating a blank value as unset.
+
+    ``.env.example`` ships keys with empty values as documentation, so an empty
+    string has to fall back to the default rather than override it.
+    """
     raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+    return raw.strip() if raw and raw.strip() else default
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = env(name)
+    return raw.lower() in {"1", "true", "yes", "on"} if raw else default
 
 
 def env_list(name: str, default: str = "") -> list[str]:
-    return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
+    return [item.strip() for item in env(name, default).split(",") if item.strip()]
 
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
+SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-only-insecure-key-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver,.onrender.com")
 
@@ -85,7 +93,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.environ.get("DJANGO_DB_PATH", str(BASE_DIR / "db.sqlite3")),
+        "NAME": env("DJANGO_DB_PATH", str(BASE_DIR / "db.sqlite3")),
         "OPTIONS": {"timeout": 20},
     }
 }
@@ -116,11 +124,11 @@ CORS_ALLOW_HEADERS = ("accept", "content-type", "x-organization", "x-requested-w
 CSRF_TRUSTED_ORIGINS = env_list("CSRF_TRUSTED_ORIGINS", "")
 
 # Maximum accepted size of an uploaded bank statement, in bytes.
-IMPORT_MAX_UPLOAD_BYTES = int(os.environ.get("IMPORT_MAX_UPLOAD_BYTES", 10 * 1024 * 1024))
+IMPORT_MAX_UPLOAD_BYTES = int(env("IMPORT_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 # Optional Airtable sync for needs_review transactions (Section 10 bonus).
 AIRTABLE_ENABLED = env_bool("AIRTABLE_ENABLED", False)
-AIRTABLE_API_TOKEN = os.environ.get("AIRTABLE_API_TOKEN", "")
-AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "")
-AIRTABLE_TABLE_NAME = os.environ.get("AIRTABLE_TABLE_NAME", "Needs Review")
-AIRTABLE_TIMEOUT_SECONDS = float(os.environ.get("AIRTABLE_TIMEOUT_SECONDS", "5"))
+AIRTABLE_API_TOKEN = env("AIRTABLE_API_TOKEN")
+AIRTABLE_BASE_ID = env("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_NAME = env("AIRTABLE_TABLE_NAME", "Needs Review")
+AIRTABLE_TIMEOUT_SECONDS = float(env("AIRTABLE_TIMEOUT_SECONDS", "5"))
